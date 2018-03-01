@@ -446,7 +446,7 @@ def svm_params_changed(parameters):
         parameters['sample_size'] != sample_size
     return changed
 
-def train_svc_model():
+def train_svc_model(arg):
     parameters = load_parameters()
     car_features_fn = Path("./") / "saver" / "car_features.array"
     notcar_features_fn = Path("./") / "saver" / "notcar_features.array"
@@ -558,11 +558,19 @@ scale = 1.5
 
 # plt.show()
 
+def load_svc_model():
+    svc_model_fn = Path("./") / "saver" / "svc.model"
+    feature_scaler_fn = Path("./") / "saver" / "feature.scaler"
+    print("load svc model from file")
+    svc = pickle.load(svc_model_fn.open('rb'))
+    X_scaler = pickle.load(feature_scaler_fn.open('rb'))
+    return svc, X_scaler
+
 def process_image(arg):
     path = Path(arg.input)
     if not path.is_file():
         exit(0)
-    svc, X_scaler = train_svc_model()
+    svc, X_scaler = load_svc_model()
     image = mpimg.imread(str(path))
     draw_image = np.copy(image)
 
@@ -588,13 +596,26 @@ def process_image(arg):
 
 def process_video(arg):    
     cap = cv2.VideoCapture("./test_video.mp4")
-    svc, X_scaler = train_svc_model()
+    svc, X_scaler = load_svc_model()
     while cap:
         ret, frame = cap.read()
         if not ret:
             break
+        # windows = slide_window(frame, x_start_stop=[None, None], y_start_stop=y_start_stop, 
+        #                     xy_window=(96, 96), xy_overlap=(0.7, 0.7))
+
+        # hot_windows = search_windows(frame, windows, svc, X_scaler, color_space=color_space, 
+        #                         spatial_size=spatial_size, hist_bins=hist_bins, 
+        #                         orient=orient, pix_per_cell=pix_per_cell, 
+        #                         cell_per_block=cell_per_block, 
+        #                         hog_channel=hog_channel, spatial_feat=spatial_feat, 
+        #                         hist_feat=hist_feat, hog_feat=hog_feat)                       
+
+        # draw_image = np.copy(frame)
+        # window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)    
         out_img = find_cars(frame, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
         cv2.imshow("out_img", out_img)
+        # cv2.imshow("out_img", window_img)
         key = cv2.waitKey(10) & 0xff
         if key in [ord('q'), 23]:
             break
@@ -610,10 +631,14 @@ if __name__ == '__main__':
     image_parse.add_argument("--output", action='store',help='save result image to another file')
 
     video_parse = subparsers.add_parser('video', help='calibrate a camera with chessboard pictures')
-    video_parse.set_defaults(func=process_video)
-    
+    video_parse.set_defaults(func=process_video)    
     video_parse.add_argument("input", action='store',help='*.mp4 file or directory.')
     video_parse.add_argument("--output", action='store',help='save result video to another file')
+
+    train_parse = subparsers.add_parser('train', help='calibrate a camera with chessboard pictures')
+    train_parse.set_defaults(func=train_svc_model)    
+    train_parse.add_argument("input", action='store',help='*.mp4 file or directory.')
+    train_parse.add_argument("--dataset", action='store',help='save result video to another file')
      
     args = parser.parse_args(sys.argv[1:])
 
