@@ -380,7 +380,7 @@ spatial_feat = True # Spatial features on or off
 hist_feat = True # Histogram features on or off
 hog_feat = True # HOG features on or off
 y_start_stop = [None, None] # Min and max in y to search in slide_window()
-svm_c = 0.1
+svm_c = 0.2
 svm_gamma = 100
 svm_loss = 'hinge'
 svm_penalty = 'l2'
@@ -400,7 +400,7 @@ if not param_fn.exists():
     parameters['hist_feat'] = hist_feat
     parameters['hog_feat'] = hog_feat
     parameters['y_start_stop'] = y_start_stop
-    parameters['svm_c'] = svm_c
+    parameters['svm_c'] = str(svm_c)
     parameters['svm_gamma'] = svm_gamma
     pickle.dump(parameters, param_fn.open('wb'))
     need_to_extract = True
@@ -419,10 +419,15 @@ else:
         parameters['hist_feat'] != hist_feat or \
         parameters['hog_feat'] != hog_feat or \
         parameters['y_start_stop'] != y_start_stop or \
-        parameters['svm_c'] != svm_c or \
+        parameters['svm_c'] != str(svm_c) or \
         parameters['svm_gamma'] != svm_gamma
+
+    if need_to_extract:
+        pickle.dump(parameters, param_fn.open('wb'))
+
 features_fn = Path("./") / "saver" / "features.pickle"
 if need_to_extract:
+    print("need to extract images features")
     car_features = extract_features(cars, color_space=color_space, 
                             spatial_size=spatial_size, hist_bins=hist_bins, 
                             orient=orient, pix_per_cell=pix_per_cell, 
@@ -448,6 +453,7 @@ if need_to_extract:
     features['notcar_features'] = notcar_features
     pickle.dump(features, features_fn.open('wb'))
 else:
+    print("load car features from pickle file.")
     features = pickle.load(features_fn.open('rb'))
     car_features = features['car_features']
     notcar_features = features['notcar_features']
@@ -506,31 +512,48 @@ window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)
 ystart = 400
 ystop = 656
 scale = 1.5
-out_img = find_cars(image, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+# cap = cv2.VideoCapture("./test_video.mp4")
+# while cap:
+#     ret, frame = cap.read()
+#     if not ret:
+#         break
+#     out_img = find_cars(frame, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+#     cv2.imshow("out_img", out_img)
+#     key = cv2.waitKey(10) & 0xff
+#     if key in [ord('q'), 23]:
+#         break
 
+out_img = find_cars(image, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
 plt.imshow(out_img)
 
 # plt.imshow(window_img)
+
 plt.show()
 
+def process_image(arg):
+    path = Path(arg.input)
+    if path.is_file():
+        pass
+    pass
+
+def process_video(arg):
+    pass
 
 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="find lane line in image or videos")
+    subparsers = parser.add_subparsers(help='commands')
 
+    image_parse = subparsers.add_parser('image', help='calibrate a camera with chessboard pictures')
+    image_parse.set_defaults(func=process_image)
+    image_parse.add_argument("input", action='store',help='image file or directory.')
+    image_parse.add_argument("--output", action='store',help='save result image to another file')
 
-# if __name__ == '__main__':
-#     parser = argparse.ArgumentParser(description="find lane line in image or videos")
-#     subparsers = parser.add_subparsers(help='commands')
-
-#     image_parse = subparsers.add_parser('image', help='calibrate a camera with chessboard pictures')
-#     image_parse.set_defaults(func=process_image)
-#     image_parse.add_argument("input", action='store',help='image file or directory.')
-#     image_parse.add_argument("--output", action='store',help='save result image to another file')
-
-#     video_parse = subparsers.add_parser('video', help='calibrate a camera with chessboard pictures')
-#     video_parse.set_defaults(func=process_video)
+    video_parse = subparsers.add_parser('video', help='calibrate a camera with chessboard pictures')
+    video_parse.set_defaults(func=process_video)
     
-#     video_parse.add_argument("input", action='store',help='*.mp4 file or directory.')
-#     video_parse.add_argument("--output", action='store',help='save result video to another file')
+    video_parse.add_argument("input", action='store',help='*.mp4 file or directory.')
+    video_parse.add_argument("--output", action='store',help='save result video to another file')
      
-#     args = parser.parse_args(sys.argv[1:])
-#     args.func(args)
+    args = parser.parse_args(sys.argv[1:])
+    args.func(args)
