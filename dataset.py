@@ -1,1 +1,0 @@
-path = "/media/messi/empty/datasets/vehicles"
