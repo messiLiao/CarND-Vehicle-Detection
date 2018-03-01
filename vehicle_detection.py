@@ -451,12 +451,14 @@ def train_svc_model(arg):
     car_features_fn = Path("./") / "saver" / "car_features.array"
     notcar_features_fn = Path("./") / "saver" / "notcar_features.array"
 
-    need_to_extract = feature_params_changed(parameters) or (not car_features_fn.exists()) or (not notcar_features_fn.exists())
+    feature_parameters_changed = feature_params_changed(parameters)
+
+    need_to_extract = feature_parameters_changed or (not car_features_fn.exists()) or (not notcar_features_fn.exists())
     print(need_to_extract)
     if need_to_extract:
         print("need to extract images features")
         cars, notcars = read_dataset()
-        if parameters_changed or (not car_features_fn.exists()):
+        if feature_parameters_changed or (not car_features_fn.exists()):
             print("extracting car features")
             t=time.time()
             car_features = extract_features(cars, color_space=color_space, 
@@ -473,7 +475,7 @@ def train_svc_model(arg):
         else:
             car_features = np.fromfile(str(car_features_fn))
 
-        if parameters_changed or (not notcar_features_fn.exists()):
+        if feature_parameters_changed or (not notcar_features_fn.exists()):
             print("extracting notcar features")
             t=time.time()
             notcar_features = extract_features(notcars, color_space=color_space, 
@@ -636,8 +638,7 @@ if __name__ == '__main__':
     video_parse.add_argument("--output", action='store',help='save result video to another file')
 
     train_parse = subparsers.add_parser('train', help='calibrate a camera with chessboard pictures')
-    train_parse.set_defaults(func=train_svc_model)    
-    train_parse.add_argument("input", action='store',help='*.mp4 file or directory.')
+    train_parse.set_defaults(func=train_svc_model)
     train_parse.add_argument("--dataset", action='store',help='save result video to another file')
      
     args = parser.parse_args(sys.argv[1:])
