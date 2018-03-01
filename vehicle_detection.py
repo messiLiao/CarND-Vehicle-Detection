@@ -1,3 +1,4 @@
+import sys
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,6 +19,7 @@ import numpy as np
 import cv2
 from skimage.feature import hog
 import pickle
+import argparse
 # Define a function to return HOG features and visualization
 def get_hog_features(img, orient, pix_per_cell, cell_per_block, 
                         vis=False, feature_vec=True):
@@ -355,18 +357,22 @@ def draw_labeled_bboxes(img, labels):
     # Return the image
     return img
 
-# Read in cars and notcars
-cars_path = Path('/home/figo/Downloads/work/datasets/vehicles/vehicles/')
-notcars_path = Path('/home/figo/Downloads/work/datasets/vehicles/non-vehicles')
-cars = list(cars_path.glob("*/*.png"))
-notcars = list(notcars_path.glob("*/*.png"))
-print("cars:{0}, notcars:{1}".format(len(cars), len(notcars)))
+def read_dataset():
+    pass
+    # Read in cars and notcars
+    cars_path = Path('/media/messi/empty/datasets/vehicles/vehicles/')
+    notcars_path = Path('/media/messi/empty/datasets/vehicles/non-vehicles')
+    cars = list(cars_path.glob("*/*.png"))
+    notcars = list(notcars_path.glob("*/*.png"))
+    print("cars:{0}, notcars:{1}".format(len(cars), len(notcars)))
 
-# Reduce the sample size because
-# The quiz evaluator times out after 13s of CPU time
-sample_size = 8700
-cars = cars[0:sample_size]
-notcars = notcars[0:sample_size]
+    # Reduce the sample size because
+    # The quiz evaluator times out after 13s of CPU time
+    sample_size = min(len(cars), len(notcars))
+    cars = cars[0:sample_size]
+    notcars = notcars[0:sample_size]
+    return cars, notcars
+
 
 ### TODO: Tweak these parameters and see how the results change.
 color_space = 'YCrCb' # Can be RGB, HSV, LUV, HLS, YUV, YCrCb
@@ -384,30 +390,39 @@ svm_c = 0.2
 svm_gamma = 100
 svm_loss = 'hinge'
 svm_penalty = 'l2'
+sample_size = 8700
 
-param_fn = Path("./") / "saver" / "parameters.pickle"
-t=time.time()
-if not param_fn.exists():
-    parameters = dict({})
-    parameters['color_space'] = color_space
-    parameters['orient'] = orient
-    parameters['pix_per_cell'] = pix_per_cell
-    parameters['cell_per_block'] = cell_per_block
-    parameters['hog_channel'] = hog_channel
-    parameters['spatial_size'] = spatial_size
-    parameters['hist_bins'] = hist_bins
-    parameters['spatial_feat'] = spatial_feat
-    parameters['hist_feat'] = hist_feat
-    parameters['hog_feat'] = hog_feat
-    parameters['y_start_stop'] = y_start_stop
-    parameters['svm_c'] = str(svm_c)
-    parameters['svm_gamma'] = svm_gamma
-    pickle.dump(parameters, param_fn.open('wb'))
-    need_to_extract = True
-else:
-    parameters  = pickle.load(param_fn.open('rb'))
 
-    need_to_extract = \
+def load_parameters():
+    pass
+    param_fn = Path("./") / "saver" / "parameters.pickle"
+    t=time.time()
+    if not param_fn.exists():
+        parameters = dict({})
+        parameters['color_space'] = color_space
+        parameters['orient'] = orient
+        parameters['pix_per_cell'] = pix_per_cell
+        parameters['cell_per_block'] = cell_per_block
+        parameters['hog_channel'] = hog_channel
+        parameters['spatial_size'] = spatial_size
+        parameters['hist_bins'] = hist_bins
+        parameters['spatial_feat'] = spatial_feat
+        parameters['hist_feat'] = hist_feat
+        parameters['hog_feat'] = hog_feat
+        parameters['y_start_stop'] = y_start_stop
+        parameters['svm_c'] = str(svm_c)
+        parameters['svm_gamma'] = svm_gamma
+        parameters['svm_loss'] = svm_loss
+        parameters['svm_penalty'] = svm_penalty
+        parameters['sample_size'] = sample_size
+        pickle.dump(parameters, param_fn.open('wb'))
+    else:
+        parameters  = pickle.load(param_fn.open('rb'))
+
+    return parameters
+
+def feature_params_changed(parameters):
+    changed = \
         parameters['color_space'] != color_space or \
         parameters['orient'] != orient or \
         parameters['pix_per_cell'] != pix_per_cell or \
@@ -418,126 +433,170 @@ else:
         parameters['spatial_feat'] != spatial_feat or \
         parameters['hist_feat'] != hist_feat or \
         parameters['hog_feat'] != hog_feat or \
-        parameters['y_start_stop'] != y_start_stop or \
+        parameters['y_start_stop'] != y_start_stop
+    return changed
+
+def svm_params_changed(parameters):    
+    changed = \
         parameters['svm_c'] != str(svm_c) or \
-        parameters['svm_gamma'] != svm_gamma
+        parameters['svm_gamma'] != svm_gamma or \
+        parameters['svm_loss'] != svm_loss or \
+        parameters['svm_penalty'] != svm_penalty or \
+        parameters['sample_size'] != sample_size
+    return changed
 
+def train_svc_model():
+    parameters = load_parameters()
+    car_features_fn = Path("./") / "saver" / "car_features.array"
+    notcar_features_fn = Path("./") / "saver" / "notcar_features.array"
+
+    need_to_extract = feature_params_changed(parameters) or (not car_features_fn.exists()) or (not notcar_features_fn.exists())
+    print(need_to_extract)
     if need_to_extract:
-        pickle.dump(parameters, param_fn.open('wb'))
+        print("need to extract images features")
+        cars, notcars = read_dataset()
+        if parameters_changed or (not car_features_fn.exists()):
+            print("extracting car features")
+            t=time.time()
+            car_features = extract_features(cars, color_space=color_space, 
+                                    spatial_size=spatial_size, hist_bins=hist_bins, 
+                                    orient=orient, pix_per_cell=pix_per_cell, 
+                                    cell_per_block=cell_per_block, 
+                                    hog_channel=hog_channel, spatial_feat=spatial_feat, 
+                                    hist_feat=hist_feat, hog_feat=hog_feat)
 
-features_fn = Path("./") / "saver" / "features.pickle"
-if need_to_extract:
-    print("need to extract images features")
-    car_features = extract_features(cars, color_space=color_space, 
-                            spatial_size=spatial_size, hist_bins=hist_bins, 
-                            orient=orient, pix_per_cell=pix_per_cell, 
-                            cell_per_block=cell_per_block, 
-                            hog_channel=hog_channel, spatial_feat=spatial_feat, 
-                            hist_feat=hist_feat, hog_feat=hog_feat)
+            t2 = time.time()
+            print(round(t2-t, 2), 'Seconds to extract features of cars')
+            car_features = np.vstack(car_features)
+            car_features.tofile(str(car_features_fn))
+        else:
+            car_features = np.fromfile(str(car_features_fn))
 
-    t2 = time.time()
-    print(round(t2-t, 2), 'Seconds to extract features of cars')
-    t=time.time()
-    notcar_features = extract_features(notcars, color_space=color_space, 
-                            spatial_size=spatial_size, hist_bins=hist_bins, 
-                            orient=orient, pix_per_cell=pix_per_cell, 
-                            cell_per_block=cell_per_block, 
-                            hog_channel=hog_channel, spatial_feat=spatial_feat, 
-                            hist_feat=hist_feat, hog_feat=hog_feat)
+        if parameters_changed or (not notcar_features_fn.exists()):
+            print("extracting notcar features")
+            t=time.time()
+            notcar_features = extract_features(notcars, color_space=color_space, 
+                                    spatial_size=spatial_size, hist_bins=hist_bins, 
+                                    orient=orient, pix_per_cell=pix_per_cell, 
+                                    cell_per_block=cell_per_block, 
+                                    hog_channel=hog_channel, spatial_feat=spatial_feat, 
+                                    hist_feat=hist_feat, hog_feat=hog_feat)
 
-    t2 = time.time()
-    print(round(t2-t, 2), 'Seconds to extract features of notcars')
+            t2 = time.time()
+            print(round(t2-t, 2), 'Seconds to extract features of notcars')
 
-    features = dict({})
-    features['car_features'] = car_features
-    features['notcar_features'] = notcar_features
-    pickle.dump(features, features_fn.open('wb'))
-else:
-    print("load car features from pickle file.")
-    features = pickle.load(features_fn.open('rb'))
-    car_features = features['car_features']
-    notcar_features = features['notcar_features']
-# Create an array stack of feature vectors
-X = np.vstack((car_features, notcar_features)).astype(np.float64)
+            notcar_features = np.vstack(notcar_features)
+            notcar_features.tofile(str(notcar_features_fn))
+        else:
+            notcar_features = np.fromfile(str(notcar_features_fn))
 
-# Define the labels vector
-y = np.hstack((np.ones(len(car_features)), np.zeros(len(notcar_features))))
+    else:
+        print("load car features from .array file.")
+        car_features = np.fromfile(str(car_features_fn)).reshape((8792, 8460))
+        notcar_features = np.fromfile(str(notcar_features_fn)).reshape((8792, 8460))
+        print("car.shape{}, notcars.shape{}".format(car_features.shape, notcar_features.shape))
 
-# Split up data into randomized training and test sets
-rand_state = np.random.randint(0, 100)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=rand_state)
+        car_features = car_features[:sample_size]
+        notcar_features = notcar_features[:sample_size]
+
+    svc_model_fn = Path("./") / "saver" / "svc.model"
+    feature_scaler_fn = Path("./") / "saver" / "feature.scaler"
     
-# Fit a per-column scaler
-X_scaler = StandardScaler().fit(X_train)
-# Apply the scaler to X
-X_train = X_scaler.transform(X_train)
-X_test = X_scaler.transform(X_test)
+    need_to_train = feature_params_changed(parameters) or svm_params_changed(parameters) or (not svc_model_fn.exists()) or (not feature_scaler_fn.exists())
+    if need_to_train:
+        print("train svc model")
+        # Create an array stack of feature vectors
+        X = np.vstack((car_features, notcar_features)).astype(np.float64)
 
-print('Using:',orient,'orientations',pix_per_cell,
-    'pixels per cell and', cell_per_block,'cells per block')
-print('Feature vector length:', len(X_train[0]))
-# Use a linear SVC 
-svc = LinearSVC(C=svm_c, penalty=svm_penalty, loss=svm_loss)
-# Check the training time for the SVC
-t=time.time()
-svc.fit(X_train, y_train)
-t2 = time.time()
-print(round(t2-t, 2), 'Seconds to train SVC...')
-# Check the score of the SVC
-print('Test Accuracy of SVC = ', round(svc.score(X_test, y_test), 4))
-# Check the prediction time for a single sample
-t=time.time()
+        # Define the labels vector
+        y = np.hstack((np.ones(len(car_features)), np.zeros(len(notcar_features))))
 
-image = mpimg.imread('./test_images/test3.jpg')
-print("{},{}".format(image.dtype, np.max(image)))
-draw_image = np.copy(image)
+        # Split up data into randomized training and test sets
+        rand_state = np.random.randint(0, 100)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=rand_state)
+            
+        # Fit a per-column scaler
+        X_scaler = StandardScaler().fit(X_train)
+        # Apply the scaler to X
+        X_train = X_scaler.transform(X_train)
+        X_test = X_scaler.transform(X_test)
 
-# Uncomment the following line if you extracted training
-# data from .png images (scaled 0 to 1 by mpimg) and the
-# image you are searching is a .jpg (scaled 0 to 255)
-# image = image.astype(np.float32)/255
+        print('Using:',orient,'orientations',pix_per_cell,
+            'pixels per cell and', cell_per_block,'cells per block')
+        print('Feature vector length:', len(X_train[0]))
+        # Use a linear SVC 
+        svc = LinearSVC(C=svm_c, penalty=svm_penalty, loss=svm_loss)
+        # Check the training time for the SVC
+        t=time.time()
+        svc.fit(X_train, y_train)
+        t2 = time.time()
+        print(round(t2-t, 2), 'Seconds to train SVC...')
+        # Check the score of the SVC
+        print('Test Accuracy of SVC = ', round(svc.score(X_test, y_test), 4))
+        # Check the prediction time for a single sample
+        t=time.time()
 
-windows = slide_window(image, x_start_stop=[None, None], y_start_stop=y_start_stop, 
-                    xy_window=(96, 96), xy_overlap=(0.7, 0.7))
+        pickle.dump(svc, svc_model_fn.open('wb'))
+        pickle.dump(X_scaler, feature_scaler_fn.open('wb'))
+    else:
+        print("load svc model from file")
+        svc = pickle.load(svc_model_fn.open('rb'))
+        X_scaler = pickle.load(feature_scaler_fn.open('rb'))
 
-hot_windows = search_windows(image, windows, svc, X_scaler, color_space=color_space, 
-                        spatial_size=spatial_size, hist_bins=hist_bins, 
-                        orient=orient, pix_per_cell=pix_per_cell, 
-                        cell_per_block=cell_per_block, 
-                        hog_channel=hog_channel, spatial_feat=spatial_feat, 
-                        hist_feat=hist_feat, hog_feat=hog_feat)                       
+    return svc, X_scaler
 
-window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)                    
 
 ystart = 400
 ystop = 656
 scale = 1.5
-# cap = cv2.VideoCapture("./test_video.mp4")
-# while cap:
-#     ret, frame = cap.read()
-#     if not ret:
-#         break
-#     out_img = find_cars(frame, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
-#     cv2.imshow("out_img", out_img)
-#     key = cv2.waitKey(10) & 0xff
-#     if key in [ord('q'), 23]:
-#         break
 
-out_img = find_cars(image, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
-plt.imshow(out_img)
+# out_img = find_cars(image, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+# plt.imshow(out_img)
 
 # plt.imshow(window_img)
 
-plt.show()
+# plt.show()
 
 def process_image(arg):
     path = Path(arg.input)
-    if path.is_file():
-        pass
+    if not path.is_file():
+        exit(0)
+    svc, X_scaler = train_svc_model()
+    image = mpimg.imread(str(path))
+    draw_image = np.copy(image)
+
+    # Uncomment the following line if you extracted training
+    # data from .png images (scaled 0 to 1 by mpimg) and the
+    # image you are searching is a .jpg (scaled 0 to 255)
+    # image = image.astype(np.float32)/255
+
+    windows = slide_window(image, x_start_stop=[None, None], y_start_stop=y_start_stop, 
+                        xy_window=(96, 96), xy_overlap=(0.7, 0.7))
+
+    hot_windows = search_windows(image, windows, svc, X_scaler, color_space=color_space, 
+                            spatial_size=spatial_size, hist_bins=hist_bins, 
+                            orient=orient, pix_per_cell=pix_per_cell, 
+                            cell_per_block=cell_per_block, 
+                            hog_channel=hog_channel, spatial_feat=spatial_feat, 
+                            hist_feat=hist_feat, hog_feat=hog_feat)                       
+
+    window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)    
+    out_img = find_cars(image, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    return out_img
     pass
 
-def process_video(arg):
-    pass
+def process_video(arg):    
+    cap = cv2.VideoCapture("./test_video.mp4")
+    svc, X_scaler = train_svc_model()
+    while cap:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        out_img = find_cars(frame, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+        cv2.imshow("out_img", out_img)
+        key = cv2.waitKey(10) & 0xff
+        if key in [ord('q'), 23]:
+            break
 
 
 if __name__ == '__main__':
@@ -556,4 +615,5 @@ if __name__ == '__main__':
     video_parse.add_argument("--output", action='store',help='save result video to another file')
      
     args = parser.parse_args(sys.argv[1:])
+
     args.func(args)
