@@ -360,8 +360,9 @@ def draw_labeled_bboxes(img, labels):
 def read_dataset():
     pass
     # Read in cars and notcars
-    cars_path = Path('/media/messi/empty/datasets/vehicles/vehicles/')
-    notcars_path = Path('/media/messi/empty/datasets/vehicles/non-vehicles')
+    import dataset
+    cars_path = Path(dataset.path) / "vehicles"
+    notcars_path = Path(dataset.path) / "non-vehicles"
     cars = list(cars_path.glob("*/*.png"))
     notcars = list(notcars_path.glob("*/*.png"))
     print("cars:{0}, notcars:{1}".format(len(cars), len(notcars)))
@@ -501,7 +502,7 @@ def train_svc_model():
 
     svc_model_fn = Path("./") / "saver" / "svc.model"
     feature_scaler_fn = Path("./") / "saver" / "feature.scaler"
-    
+
     need_to_train = feature_params_changed(parameters) or svm_params_changed(parameters) or (not svc_model_fn.exists()) or (not feature_scaler_fn.exists())
     if need_to_train:
         print("train svc model")
