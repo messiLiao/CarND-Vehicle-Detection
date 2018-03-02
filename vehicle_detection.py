@@ -217,6 +217,8 @@ def search_windows(img, windows, clf, scaler, color_space='RGB',
         #7) If positive (prediction == 1) then save the window
         if prediction == 1:
             on_windows.append(window)
+        else:
+            print("not 1")
     #8) Return windows for positive detections
     return on_windows
 
@@ -231,7 +233,6 @@ def convert_color(img, conv='RGB2YCrCb'):
 # Define a single function that can extract features using hog sub-sampling and make predictions
 def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins):
     
-    draw_img = np.copy(img)
     img = img.astype(np.float32)/255
     
     img_tosearch = img[ystart:ystop,:,:]
@@ -274,6 +275,8 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
 
             xleft = xpos*pix_per_cell
             ytop = ypos*pix_per_cell
+            # if xb < 2:
+            #     print([xpos, ypos, xleft, ytop])
 
             # Extract the image patch
             subimg = cv2.resize(ctrans_tosearch[ytop:ytop+window, xleft:xleft+window], (64,64))
@@ -301,16 +304,15 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
                     top_left = (xbox_left, ytop_draw+ystart)
                     bottom_right = (xbox_left+win_draw,ytop_draw+win_draw+ystart)
                     found_win_list.append((top_left, bottom_right))
-                    cv2.rectangle(draw_img, top_left, bottom_right,(0,0,255),6) 
                 
-    return draw_img, found_win_list
+    return found_win_list
     
 def add_heat(heatmap, bbox_list):
     # Iterate through list of bboxes
     for box in bbox_list:
         # Add += 1 for all pixels inside each bbox
         # Assuming each "box" takes the form ((x1, y1), (x2, y2))
-        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 10
 
     # Return updated heatmap
     return heatmap# Iterate through list of bboxes
@@ -535,13 +537,6 @@ def train_svc_model(arg):
 ystart, ystop = y_start_stop
 scale = 1.5
 
-# out_img, found_win_list = find_cars(image, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
-# plt.imshow(out_img)
-
-# plt.imshow(window_img)
-
-# plt.show()
-
 def load_svc_model():
     svc_model_fn = Path("./") / "saver" / "svc.model"
     feature_scaler_fn = Path("./") / "saver" / "feature.scaler"
@@ -563,19 +558,36 @@ def process_image(arg):
     # image you are searching is a .jpg (scaled 0 to 255)
     # image = image.astype(np.float32)/255
 
-    windows = slide_window(image, x_start_stop=[None, None], y_start_stop=y_start_stop, 
-                        xy_window=(96, 96), xy_overlap=(0.7, 0.7))
+    # windows = slide_window(image, x_start_stop=[None, None], y_start_stop=y_start_stop, 
+    #                     xy_window=(64, 64), xy_overlap=(0, 0))
 
-    hot_windows = search_windows(image, windows, svc, X_scaler, color_space=color_space, 
-                            spatial_size=spatial_size, hist_bins=hist_bins, 
-                            orient=orient, pix_per_cell=pix_per_cell, 
-                            cell_per_block=cell_per_block, 
-                            hog_channel=hog_channel, spatial_feat=spatial_feat, 
-                            hist_feat=hist_feat, hog_feat=hog_feat)                       
+    # hot_windows = search_windows(image, windows, svc, X_scaler, color_space=color_space, 
+    #                         spatial_size=spatial_size, hist_bins=hist_bins, 
+    #                         orient=orient, pix_per_cell=pix_per_cell, 
+    #                         cell_per_block=cell_per_block, 
+    #                         hog_channel=hog_channel, spatial_feat=spatial_feat, 
+    #                         hist_feat=hist_feat, hog_feat=hog_feat) 
+    # print("{}, {}".format(len(windows), len(hot_windows)))                      
 
-    window_img = draw_boxes(draw_image, hot_windows, color=(0, 0, 255), thick=6)    
-    out_img, found_win_list = find_cars(image, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    # out_img = draw_boxes(draw_image, windows, color=(0, 0, 255), thick=6)    
+    found_win_list = []
+    win_list = find_cars(image, ystart, ystop, 1.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    found_win_list.extend(win_list)
+    win_list = find_cars(image, ystart, ystop, 1.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    found_win_list.extend(win_list)
+    win_list = find_cars(image, ystart, ystop, 2.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    found_win_list.extend(win_list)
+
+    draw_image = np.copy(image)
+    out_img = cv2.cvtColor(draw_image, cv2.COLOR_RGB2BGR)
+
+    for (top_left, bottom_right) in found_win_list:
+        cv2.rectangle(out_img, top_left, bottom_right,(0,0,255),6)
+
+    heatmap = np.zeros_like(out_img, dtype=np.uint8)
+    add_heat(heatmap, found_win_list)
     cv2.imshow("out_img", out_img)
+    cv2.imshow("heat", heatmap)
     key = cv2.waitKey(0) & 0xff
     return out_img
     pass
@@ -601,21 +613,23 @@ def process_video(arg):
         if not ret:
             break
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # windows = slide_window(frame, x_start_stop=[None, None], y_start_stop=y_start_stop, 
-        #                     xy_window=(96, 96), xy_overlap=(0.7, 0.7))
 
-        # hot_windows = search_windows(frame, windows, svc, X_scaler, color_space=color_space, 
-        #                         spatial_size=spatial_size, hist_bins=hist_bins, 
-        #                         orient=orient, pix_per_cell=pix_per_cell, 
-        #                         cell_per_block=cell_per_block, 
-        #                         hog_channel=hog_channel, spatial_feat=spatial_feat, 
-        #                         hist_feat=hist_feat, hog_feat=hog_feat)                       
-
-        # draw_image = np.copy(frame)
-        # out_img = draw_boxes(draw_image, windows, color=(0, 0, 255), thick=6)    
-        out_img, found_win_list = find_cars(frame, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
-        out_img = cv2.cvtColor(out_img, cv2.COLOR_RGB2BGR)
+        found_win_list = []
+        win_list = find_cars(frame, ystart, ystop, 1.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+        found_win_list.extend(win_list)
+        win_list = find_cars(frame, ystart, ystop, 1.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+        found_win_list.extend(win_list)
+        win_list = find_cars(frame, ystart, ystop, 2.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+        found_win_list.extend(win_list)
+        
+        out_img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        for (top_left, bottom_right) in found_win_list:
+            cv2.rectangle(out_img, top_left, bottom_right,(0,0,255),6)
+            
+        heatmap = np.zeros_like(out_img, dtype=np.uint8)
+        add_heat(heatmap, found_win_list)
         cv2.imshow("out_img", out_img)
+        # cv2.imshow("heat", heatmap)
         key = cv2.waitKey(10) & 0xff
         if key in [ord('q'), 23]:
             break
