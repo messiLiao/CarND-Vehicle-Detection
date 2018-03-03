@@ -297,7 +297,7 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
             prediction_prob = svc.decision_function(test_features)
             
             if test_prediction == 1:
-                if prediction_prob[0] > 0.2:
+                if prediction_prob[0] > 0.5:
                     xbox_left = np.int(xleft*scale)
                     ytop_draw = np.int(ytop*scale)
                     win_draw = np.int(window*scale)
@@ -312,7 +312,7 @@ def add_heat(heatmap, bbox_list):
     for box in bbox_list:
         # Add += 1 for all pixels inside each bbox
         # Assuming each "box" takes the form ((x1, y1), (x2, y2))
-        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 10
+        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 2
 
     # Return updated heatmap
     return heatmap# Iterate through list of bboxes
@@ -608,18 +608,32 @@ def process_video(arg):
     else:
         out = None
 
+    skip_index = 0
+    frame_index = 0
     while cap:
         ret, frame = cap.read()
         if not ret:
             break
+        frame_index += 1
+        if frame_index < skip_index:
+            continue
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         found_win_list = []
+        ystart, ystop = 400, 500
         win_list = find_cars(frame, ystart, ystop, 1.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
         found_win_list.extend(win_list)
+        ystart, ystop = 400, 600
         win_list = find_cars(frame, ystart, ystop, 1.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
         found_win_list.extend(win_list)
+        ystart, ystop = 400, 600
         win_list = find_cars(frame, ystart, ystop, 2.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+        found_win_list.extend(win_list)
+        ystart, ystop = 400, 650
+        win_list = find_cars(frame, ystart, ystop, 2.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+        found_win_list.extend(win_list)
+        ystart, ystop = 400, 700
+        win_list = find_cars(frame, ystart, ystop, 3.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
         found_win_list.extend(win_list)
         
         out_img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
@@ -628,8 +642,10 @@ def process_video(arg):
             
         heatmap = np.zeros_like(out_img, dtype=np.uint8)
         add_heat(heatmap, found_win_list)
+        # heatmap[heatmap<10] = 0
+        # heatmap *= 255 // (np.max(heatmap) + 1)
         cv2.imshow("out_img", out_img)
-        # cv2.imshow("heat", heatmap)
+        cv2.imshow("heat", heatmap)
         key = cv2.waitKey(10) & 0xff
         if key in [ord('q'), 23]:
             break
@@ -650,6 +666,7 @@ if __name__ == '__main__':
     video_parse.set_defaults(func=process_video)    
     video_parse.add_argument("input", action='store',help='*.mp4 file or directory.')
     video_parse.add_argument("--output", action='store',help='save result video to another file')
+    video_parse.add_argument("--skip", action='store',help='save result video to another file')
 
     train_parse = subparsers.add_parser('train', help='calibrate a camera with chessboard pictures')
     train_parse.set_defaults(func=train_svc_model)
