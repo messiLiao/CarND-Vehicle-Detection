@@ -35,3 +35,19 @@ Some example images for testing your pipeline on single frames are located in th
 ## How to write a README
 A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
 
+## train a model:
+add a file named 'dateset.py' which contain only one line "path=/path_to_your_dataset"
+```
+python3 vehicle_detection.py train
+```
+
+## detect in image 
+```bash
+python3 vehicle_detection.py image ./test_images/test3.jpg
+```
+
+## detect in video: 
+```bash
+python3 vehicle_detection.py video project_video.mp4 --output project_output.avi
+```
+
