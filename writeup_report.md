@@ -38,26 +38,43 @@ You're reading it!
 
 #### 1. Explain how (and identify where in your code) you extracted HOG features from the training images.
 
-The code for this step is contained in the first code cell of the IPython notebook (or in lines # through # of the file called `some_file.py`).  
+The code for this step is contained in the first code in lines 148 through 193 of the file called `vehicle_detection.py`.  
 
 I started by reading in all the `vehicle` and `non-vehicle` images.  Here is an example of one of each of the `vehicle` and `non-vehicle` classes:
 
 ![alt text][image1]
 
-I then explored different color spaces and different `skimage.hog()` parameters (`orientations`, `pixels_per_cell`, and `cells_per_block`).  I grabbed random images from each of the two classes and displayed them to get a feel for what the `skimage.hog()` output looks like.
+I then explored different color spaces and different `skimage.image.hog()` parameters (`orientations`, `pixels_per_cell`, and `cells_per_block`).  I grabbed random images from each of the two classes and displayed them to get a feel for what the `skimage.hog()` output looks like.
 
-Here is an example using the `YCrCb` color space and HOG parameters of `orientations=8`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
+Here is an example using the `YCrCb` color space and HOG parameters of `orientations=9`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
 
 
 ![alt text][image2]
 
 #### 2. Explain how you settled on your final choice of HOG parameters.
 
-I tried various combinations of parameters and...
+I tried various combinations of parameters group:
+
+
+| group|orient|pix_per_cell |cell_per_block | Result |
+|:---:|:---:|:--:|:---:|:---:|
+| 1 |9| 4| 2 | hog feature vector length was 24300, memory out|
+| 2 | 9|6| 2 | hog feature vector length was 8748. parameters seems ok|
+| 3 | 9|8| 2 | hog feature vector length was 5292. parameters seems ok|
+| 4 | 9|10| 2 | hog feature vector length was 972. too much false positive result when detecting in video|
+| 5 | 9|4| 4 | hog feature vector length was 73008, memory out|
+| 6 | 9|6| 4 | hog feature vector length was 21168, memory out|
+| 7 | 9|8| 4 | hog feature vector length was 10800, memory out|
+| 8 | 9|10| 4 | hog feature vector length was 3888, parameters seems ok, false positive count more then goup 2 and 3|
+| 9 | 18|8| 2 | hog feature vector length was 10584, parameters seems ok, false positive count more then goup 2 and 3|
+| 10 | 18|10| 2 | hog feature vector length was 5400, effect not better|
+
+At last, I choose group 3.
+NOTE: All have the same svc model parameters: c=0.1, loss = 'hinge', penalty = 'l2'
 
 #### 3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
 
-I trained a linear SVM using...
+After chosing the HOG parameters. I trained a linear SVM model and non-linear SVM model. But it took t very long time to train a non-linear SVM model(more than half an hour). So I only chose the linear SVM model. The most important paramter of linear SVM model is C. From 0.1 to 0.9, I found that the larger C ,the worse the result. Result was almost same when C was less than 0.4. At last I choose 0.1.
 
 ### Sliding Window Search
 
@@ -77,7 +94,7 @@ Ultimately I searched on two scales using YCrCb 3-channel HOG features plus spat
 ### Video Implementation
 
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
-Here's a [link to my video result](./project_video.mp4)
+Here's a [link to my video result](./project_output.avi)
 
 
 #### 2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
@@ -104,7 +121,5 @@ Here's an example result showing the heatmap from a series of frames of video, t
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I use HOG feature, color feature, 
-
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+The biggest problem is that choosing the HOG parameters and SVM parameters. One reason why it's hard is the diffrence between training dataset and test images and video. So, choosing a better feature is the best way to make it more robust.
 

@@ -9,6 +9,7 @@ import time
 from sklearn.svm import LinearSVC, SVC
 from sklearn.preprocessing import StandardScaler
 from skimage.feature import hog
+from scipy.ndimage.measurements import label as lb
 # NOTE: the next import is only valid for scikit-learn version <= 0.17
 # for scikit-learn >= 0.18 use:
 from sklearn.model_selection import train_test_split
@@ -70,6 +71,7 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
     # Create a list to append feature vectors to
     features = []
     # Iterate through the list of images
+    print_feat = True
     for img_fn in imgs:
         # Read in each one by one
         img = mpimg.imread(str(img_fn))
@@ -78,6 +80,9 @@ def extract_features(imgs, color_space='RGB', spatial_size=(32, 32),
                         pix_per_cell, cell_per_block, hog_channel,
                         spatial_feat, hist_feat, hog_feat)
         features.append(feature)
+        if print_feat:
+            print(['feature length:', len(feature)])
+            print_feat = False
     # Return list of feature vectors
     return features
     
@@ -275,24 +280,29 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
 
             xleft = xpos*pix_per_cell
             ytop = ypos*pix_per_cell
-            # if xb < 2:
-            #     print([xpos, ypos, xleft, ytop])
 
             # Extract the image patch
             subimg = cv2.resize(ctrans_tosearch[ytop:ytop+window, xleft:xleft+window], (64,64))
-          
             # Get color features
             spatial_features = bin_spatial(subimg, size=spatial_size)
             hist_features = color_hist(subimg, nbins=hist_bins)
 
             # Scale features and make a prediction
-            test_features = X_scaler.transform(np.hstack((spatial_features, hist_features, hog_features)).reshape(1, -1))
+            feature_list = []
+            if spatial_feat:
+                feature_list.append(spatial_features)
+            if hist_feat:
+                feature_list.append(hist_features)
+            if hog_feat:
+                feature_list.append(hog_features)
+            test_features = X_scaler.transform(np.hstack(feature_list).reshape(1, -1))
             # test_features = X_scaler.transform(single_img_features(subimg, color_space=color_space, 
             #                     spatial_size=spatial_size, hist_bins=hist_bins, 
             #                     orient=orient, pix_per_cell=pix_per_cell, 
             #                     cell_per_block=cell_per_block, 
             #                     hog_channel=hog_channel, spatial_feat=spatial_feat, 
             #                     hist_feat=hist_feat, hog_feat=hog_feat).reshape(1, -1))
+
             test_prediction = svc.predict(test_features)
             prediction_prob = svc.decision_function(test_features)
             
@@ -303,7 +313,7 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
                     win_draw = np.int(window*scale)
                     top_left = (xbox_left, ytop_draw+ystart)
                     bottom_right = (xbox_left+win_draw,ytop_draw+win_draw+ystart)
-                    found_win_list.append((top_left, bottom_right))
+                    found_win_list.append((top_left, bottom_right, prediction_prob[0]))
                 
     return found_win_list
     
@@ -312,7 +322,7 @@ def add_heat(heatmap, bbox_list):
     for box in bbox_list:
         # Add += 1 for all pixels inside each bbox
         # Assuming each "box" takes the form ((x1, y1), (x2, y2))
-        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 2
+        heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
 
     # Return updated heatmap
     return heatmap# Iterate through list of bboxes
@@ -323,7 +333,8 @@ def apply_threshold(heatmap, threshold):
     # Return thresholded map
     return heatmap
 
-def draw_labeled_bboxes(img, labels):
+def draw_labeled_bboxes(img, labels, preframe_bbox_list):
+    bbox_list = []
     # Iterate through all detected cars
     for car_number in range(1, labels[1]+1):
         # Find pixels with each car_number label value
@@ -332,11 +343,37 @@ def draw_labeled_bboxes(img, labels):
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
         # Define a bounding box based on min/max x and y
-        bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+        x1, y1, x2, y2 = np.min(nonzerox), np.min(nonzeroy), np.max(nonzerox), np.max(nonzeroy)
+        
+        w, h = x2 - x1, y2 - y1
+        if w < 50 or h < 50:
+            continue
+
+        bbox = ((x1, y1), (x2, y2))
+        bbox_list.append(bbox)
+
+        found = True
+        for frame_bbox in preframe_bbox_list:
+            overlap = False
+            for rect in frame_bbox:
+                w0, h0 = get_overlap(bbox, rect)
+                if w0 < 50 or h0 < 50:
+                    continue
+                else:
+                    overlap = True
+                    break
+            if overlap:
+                continue
+            else:
+                found = False
+                break
+        if not found:
+            continue
         # Draw the box on the image
         cv2.rectangle(img, bbox[0], bbox[1], (0,0,255), 6)
+
     # Return the image
-    return img
+    return bbox_list
 
 def read_dataset():
     pass
@@ -373,11 +410,15 @@ svm_gamma = 100
 svm_loss = 'hinge'
 svm_penalty = 'l2'
 sample_size = 8700
+linear_svc_model_fn = Path("./saver/linear_svc.model")
+feature_scaler_fn = Path("./saver/feature.scaler")
+param_fn = Path("./saver/parameters.pickle")
+car_features_fn = Path("./saver/car_features.array")
+notcar_features_fn = Path("./saver/notcar_features.array")
 
 
 def load_parameters():
     pass
-    param_fn = Path("./") / "saver" / "parameters.pickle"
     t=time.time()
     if not param_fn.exists():
         parameters = dict({})
@@ -404,7 +445,22 @@ def load_parameters():
     return parameters
 
 def save_parameters(parameters):
-    param_fn = Path("./") / "saver" / "parameters.pickle"
+    parameters['color_space'] = color_space
+    parameters['orient'] = orient
+    parameters['pix_per_cell'] = pix_per_cell
+    parameters['cell_per_block'] = cell_per_block
+    parameters['hog_channel'] = hog_channel
+    parameters['spatial_size'] = spatial_size
+    parameters['hist_bins'] = hist_bins
+    parameters['spatial_feat'] = spatial_feat
+    parameters['hist_feat'] = hist_feat
+    parameters['hog_feat'] = hog_feat
+    parameters['y_start_stop'] = y_start_stop
+    parameters['svm_c'] = str(svm_c)
+    parameters['svm_gamma'] = svm_gamma
+    parameters['svm_loss'] = svm_loss
+    parameters['svm_penalty'] = svm_penalty
+    parameters['sample_size'] = sample_size
     pickle.dump(parameters, param_fn.open('wb'))
     return True
 
@@ -433,17 +489,16 @@ def svm_params_changed(parameters):
 
 def train_svc_model(arg):
     parameters = load_parameters()
-    car_features_fn = Path("./") / "saver" / "car_features.array"
-    notcar_features_fn = Path("./") / "saver" / "notcar_features.array"
 
     feature_parameters_changed = feature_params_changed(parameters)
 
+    # extract feature when parameters changed and features file not exists.
     need_to_extract = feature_parameters_changed or (not car_features_fn.exists()) or (not notcar_features_fn.exists())
-    print(need_to_extract)
     if need_to_extract:
         print("need to extract images features")
         cars, notcars = read_dataset()
         if feature_parameters_changed or (not car_features_fn.exists()):
+            # extract car features
             print("extracting car features")
             t=time.time()
             car_features = extract_features(cars, color_space=color_space, 
@@ -461,6 +516,7 @@ def train_svc_model(arg):
             car_features = np.fromfile(str(car_features_fn))
 
         if feature_parameters_changed or (not notcar_features_fn.exists()):
+            # extract notcar features
             print("extracting notcar features")
             t=time.time()
             notcar_features = extract_features(notcars, color_space=color_space, 
@@ -487,10 +543,8 @@ def train_svc_model(arg):
         car_features = car_features[:sample_size]
         notcar_features = notcar_features[:sample_size]
 
-    svc_model_fn = Path("./") / "saver" / "svc.model"
-    feature_scaler_fn = Path("./") / "saver" / "feature.scaler"
 
-    need_to_train = feature_params_changed(parameters) or svm_params_changed(parameters) or (not svc_model_fn.exists()) or (not feature_scaler_fn.exists())
+    need_to_train = feature_params_changed(parameters) or svm_params_changed(parameters) or (not linear_svc_model_fn.exists()) or (not feature_scaler_fn.exists())
     if need_to_train:
         print("train svc model")
         # Create an array stack of feature vectors
@@ -513,35 +567,74 @@ def train_svc_model(arg):
             'pixels per cell and', cell_per_block,'cells per block')
         print('Feature vector length:', len(X_train[0]))
         # Use a linear SVC 
-        svc = LinearSVC(C=svm_c, penalty=svm_penalty, loss=svm_loss)
+        lsvc = LinearSVC(C=svm_c, penalty=svm_penalty, loss=svm_loss)
+
         # Check the training time for the SVC
         t=time.time()
-        svc.fit(X_train, y_train)
+        lsvc.fit(X_train, y_train)
         t2 = time.time()
-        print(round(t2-t, 2), 'Seconds to train SVC...')
+        print(round(t2-t, 2), 'Seconds to train LinearSVC...')
         # Check the score of the SVC
-        print('Test Accuracy of SVC = ', round(svc.score(X_test, y_test), 4))
-        # Check the prediction time for a single sample
-        t=time.time()
+        print('Test Accuracy of LinearSVC = ', round(lsvc.score(X_test, y_test), 4))
 
-        pickle.dump(svc, svc_model_fn.open('wb'))
+        pickle.dump(lsvc, linear_svc_model_fn.open('wb'))
         pickle.dump(X_scaler, feature_scaler_fn.open('wb'))
     else:
         print("load svc model from file")
-        svc = pickle.load(svc_model_fn.open('rb'))
+        lsvc = pickle.load(linear_svc_model_fn.open('rb'))
         X_scaler = pickle.load(feature_scaler_fn.open('rb'))
     save_parameters(parameters)
-    return svc, X_scaler
+    return lsvc, X_scaler
 
+def get_overlap(rect1, rect2):
+    ''' 
+    check 2 rectangle are intersected. 
+    param :
+        rect1: ((x1, y1), (x2, y2))
+        rect2: ((x1, y1), (x2, y2))
+    '''
+    (y1, x1), (y2, x2) = rect1
+    x1, x2 = min(x1, x2), max(x1, x2)
+    y1, y2 = min(y1, y2), max(y1, y2)
+    h1, w1 = y2 - y1, x2 - x1
+
+    (n1, m1), (n2, m2) = rect2
+    n1, n2 = min(n1, n2), max(n1, n2)
+    m1, m2 = min(m1, m2), max(m1, m2)
+    h2, w2 = n2 - n1, m2 - m1
+
+    lx, ly = min(x1, m1), min(y1, n1)
+    rx, ry = max(x2, m2), max(y2, n2)
+    h, w = ry - ly, rx - lx
+    if h < h1 + h2 and w < w1 + w2:
+        overlap = True
+        ow = w1 + w2 - w
+        oh = h1 + h2 - h
+    else:
+        overlap = False
+        ow, oh = 0, 0
+    return (oh, ow)
+
+def split_rect_list(rect_list):
+    rect_group_list = []
+    if len(rect_list) < 1:
+        return rect_group_list
+    rect_group_list.append(rect_list.pop(0))
+    while True:
+        if len(rect_list) < 1:
+            break
+        rect = rect_list.pop(0)
+    return rect_group_list
 
 ystart, ystop = y_start_stop
 scale = 1.5
 
 def load_svc_model():
-    svc_model_fn = Path("./") / "saver" / "svc.model"
-    feature_scaler_fn = Path("./") / "saver" / "feature.scaler"
+    '''
+    load trained model from file
+    '''
     print("load svc model from file")
-    svc = pickle.load(svc_model_fn.open('rb'))
+    svc = pickle.load(linear_svc_model_fn.open('rb'))
     X_scaler = pickle.load(feature_scaler_fn.open('rb'))
     return svc, X_scaler
 
@@ -551,7 +644,21 @@ def process_image(arg):
         exit(0)
     svc, X_scaler = load_svc_model()
     image = mpimg.imread(str(path))
-    draw_image = np.copy(image)
+    if image.dtype == np.uint8:
+        draw_image = image.astype(np.float32) / 255
+    else:
+        draw_image = np.copy(image)
+    subimage = draw_image[:64, :64]
+    features = single_img_features(subimage, color_space, spatial_size,
+                    hist_bins, orient, 
+                    pix_per_cell, cell_per_block, hog_channel,
+                    spatial_feat, hist_feat, hog_feat)
+
+    test_features = X_scaler.transform(np.array(features).reshape(1, -1))
+    svc.predict(test_features)
+    #6) Predict using your classifier
+    # prediction = clf.predict(test_features)
+    #7) If positive (prediction == 1) then save the window
 
     # Uncomment the following line if you extracted training
     # data from .png images (scaled 0 to 1 by mpimg) and the
@@ -571,23 +678,49 @@ def process_image(arg):
 
     # out_img = draw_boxes(draw_image, windows, color=(0, 0, 255), thick=6)    
     found_win_list = []
-    win_list = find_cars(image, ystart, ystop, 1.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    frame = image
+    ystart, ystop = 400, 500
+    win_list = find_cars(frame, ystart, ystop, 1.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
     found_win_list.extend(win_list)
-    win_list = find_cars(image, ystart, ystop, 1.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    ystart, ystop = 400, 600
+    win_list = find_cars(frame, ystart, ystop, 1.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
     found_win_list.extend(win_list)
-    win_list = find_cars(image, ystart, ystop, 2.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    ystart, ystop = 400, 600
+    win_list = find_cars(frame, ystart, ystop, 2.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
     found_win_list.extend(win_list)
-
-    draw_image = np.copy(image)
-    out_img = cv2.cvtColor(draw_image, cv2.COLOR_RGB2BGR)
-
+    ystart, ystop = 400, 650
+    win_list = find_cars(frame, ystart, ystop, 2.5, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    found_win_list.extend(win_list)
+    ystart, ystop = 400, 700
+    win_list = find_cars(frame, ystart, ystop, 3.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    found_win_list.extend(win_list)
+    ystart, ystop = 500, 700
+    win_list = find_cars(frame, ystart, ystop, 4.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    found_win_list.extend(win_list)
+    ystart, ystop = 600, 700
+    win_list = find_cars(frame, ystart, ystop, 6.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    found_win_list.extend(win_list)
+    
+    out_img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    draw_image = out_img.copy()
     for (top_left, bottom_right) in found_win_list:
-        cv2.rectangle(out_img, top_left, bottom_right,(0,0,255),6)
-
-    heatmap = np.zeros_like(out_img, dtype=np.uint8)
+        cv2.rectangle(draw_image, top_left, bottom_right,(0,0,255),6)
+        
+    cv2.imshow("out_img", draw_image)
+    heatmap = np.zeros_like(out_img[:,:,0], dtype=np.uint8)
     add_heat(heatmap, found_win_list)
-    cv2.imshow("out_img", out_img)
-    cv2.imshow("heat", heatmap)
+    heatmap[heatmap<2] = 0
+    # heatmap[heatmap<10] = 0
+    # heatmap *= 255 // (np.max(heatmap) + 1)
+    img, contours, h = cv2.findContours(heatmap,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+    bound_rect_list = []
+    draw_heat = out_img.copy()
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        print(['w:', w, ',h:', h])
+        bound_rect_list.append(((y, x), (y+h, x+w)))
+        cv2.rectangle(draw_heat, (x, y), (x+w, y+h), (255,), 5)
+    cv2.imshow("heat", draw_heat)
     key = cv2.waitKey(0) & 0xff
     return out_img
     pass
@@ -610,6 +743,7 @@ def process_video(arg):
 
     skip_index = 0
     frame_index = 0
+    frame_bbox_list = []
     while cap:
         ret, frame = cap.read()
         if not ret:
@@ -619,6 +753,7 @@ def process_video(arg):
             continue
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
+        # multi-scale cars detect
         found_win_list = []
         ystart, ystop = 400, 500
         win_list = find_cars(frame, ystart, ystop, 1.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
@@ -635,17 +770,36 @@ def process_video(arg):
         ystart, ystop = 400, 700
         win_list = find_cars(frame, ystart, ystop, 3.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
         found_win_list.extend(win_list)
+        ystart, ystop = 500, 700
+        win_list = find_cars(frame, ystart, ystop, 4.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+        found_win_list.extend(win_list)
+        ystart, ystop = 600, 700
+        win_list = find_cars(frame, ystart, ystop, 6.0, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+        found_win_list.extend(win_list)
         
         out_img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        for (top_left, bottom_right) in found_win_list:
-            cv2.rectangle(out_img, top_left, bottom_right,(0,0,255),6)
             
-        heatmap = np.zeros_like(out_img, dtype=np.uint8)
+        heatmap = np.zeros_like(out_img[:,:,0], dtype=np.uint8)
+
+        heatmap[heatmap<2] = 0
+
+        # draw heatmap 
         add_heat(heatmap, found_win_list)
-        # heatmap[heatmap<10] = 0
-        # heatmap *= 255 // (np.max(heatmap) + 1)
-        cv2.imshow("out_img", out_img)
-        cv2.imshow("heat", heatmap)
+
+        # Apply threshold to help remove false positives
+        heat = apply_threshold(heatmap,1)
+
+        # Visualize the heatmap when displaying    
+        heatmap = np.clip(heat, 0, 255)
+
+        # Find final boxes from heatmap using label function
+        labels = lb(heatmap)
+        bbox_list = draw_labeled_bboxes(out_img, labels, frame_bbox_list)
+        frame_bbox_list.append(bbox_list)
+        if len(frame_bbox_list) > 4:
+            frame_bbox_list.pop(0)
+
+        cv2.imshow("output", out_img)
         key = cv2.waitKey(10) & 0xff
         if key in [ord('q'), 23]:
             break
